@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live Monitor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .blink { animation: flash 1s infinite; }
+        @keyframes flash { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body class="bg-gray-900 text-white font-sans p-8">
+    
+    <div id="sound-overlay" onclick="enableAudio()" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 cursor-pointer">
+        <div class="text-center animate-bounce">
+            <p class="text-4xl text-red-500 font-bold mb-4">⚠ CLICK TO ARM SYSTEM ⚠</p>
+            <p class="text-gray-400">(Required to enable audio alerts)</p>
+        </div>
+    </div>
+
+    <div class="mb-8 flex justify-between items-center border-b border-gray-700 pb-4">
+        <h1 class="text-3xl font-bold text-red-500">⚠ Live Security Monitor</h1>
+        <div>
+            <a href="/" class="px-4 py-2 bg-red-600 rounded mr-2">Live View</a>
+            <a href="/history" class="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600">History & Graphs</a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+        <div id="card-Room1" class="bg-gray-800 p-10 rounded-xl border-4 border-transparent transition-all">
+            <h2 class="text-2xl text-gray-400">Room 1</h2>
+            <div class="mt-4">
+                <span id="status-Room1" class="text-4xl font-bold text-green-500">SECURE</span>
+                <p id="dist-Room1" class="text-gray-500 mt-2">No activity</p>
+            </div>
+        </div>
+
+        <div id="card-Room2" class="bg-gray-800 p-10 rounded-xl border-4 border-transparent transition-all">
+            <h2 class="text-2xl text-gray-400">Room 2</h2>
+            <div class="mt-4">
+                <span id="status-Room2" class="text-4xl font-bold text-green-500">SECURE</span>
+                <p id="dist-Room2" class="text-gray-500 mt-2">No activity</p>
+            </div>
+        </div>
+    </div>
+
+    <audio id="siren" loop src="https://www.soundjay.com/buttons/beep-01a.mp3"></audio>
+
+    <script>
+        const socket = io();
+        const siren = document.getElementById('siren');
+        const activeRooms = new Set(); 
+        
+        function enableAudio() {
+            siren.play().then(() => {
+                siren.pause();
+                siren.currentTime = 0;
+                document.getElementById('sound-overlay').style.display = 'none';
+            }).catch(e => console.log("Audio permission error:", e));
+        }
+
+        socket.on('status_update', (data) => {
+            const card = document.getElementById(`card-${data.room}`);
+            const statusText = document.getElementById(`status-${data.room}`);
+            const distText = document.getElementById(`dist-${data.room}`);
+
+            if (data.active) {
+                // UPDATE VISUALS
+                activeRooms.add(data.room);
+                card.classList.add('border-red-600', 'blink');
+                card.classList.remove('border-transparent');
+                statusText.innerText = "INTRUDER DETECTED!";
+                statusText.className = "text-4xl font-bold text-red-500";
+                distText.innerText = `Distance: ${data.dist} cm`;
+                
+                // PLAY SOUND
+                if (siren.paused) {
+                    siren.play().catch(e => console.log("User interaction needed"));
+                }
+            } else {
+                // CLEAR VISUALS
+                activeRooms.delete(data.room);
+                card.classList.remove('border-red-600', 'blink');
+                card.classList.add('border-transparent');
+                statusText.innerText = "SECURE";
+                statusText.className = "text-4xl font-bold text-green-500";
+                distText.innerText = "No activity";
+
+                // STOP SOUND (If all rooms clear)
+                if (activeRooms.size === 0) {
+                    siren.pause();
+                    siren.currentTime = 0;
+                }
+            }
+        });
+    </script>
+</body>
+</html>

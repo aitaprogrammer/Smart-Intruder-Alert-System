@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>History Log</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> </head>
+<body class="bg-gray-100 font-sans p-8">
+
+    <div class="mb-8 flex justify-between items-center border-b border-gray-300 pb-4">
+        <h1 class="text-3xl font-bold text-gray-800">Security History</h1>
+        <div>
+            <a href="/" class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-500 mr-2">Live View</a>
+            <a href="/history" class="px-4 py-2 bg-blue-600 text-white rounded">History & Graphs</a>
+        </div>
+    </div>
+
+    <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6" role="alert">
+        <p class="font-bold">System Active</p>
+        <p>If an intrusion is detected, you will be automatically redirected to the Live Dashboard.</p>
+    </div>
+
+    <div class="bg-white p-6 rounded shadow mb-8">
+        <h3 class="text-lg font-bold mb-4 text-gray-700">All Past Intrusions (Scatter Plot)</h3>
+        <div class="h-80 w-full">
+            <canvas id="historyChart"></canvas>
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded shadow">
+        <h3 class="text-lg font-bold mb-4">Past Records Table</h3>
+        <table class="w-full text-left border-collapse">
+            <thead>
+                <tr class="bg-gray-200">
+                    <th class="p-3">Room</th>
+                    <th class="p-3">Start Time</th>
+                    <th class="p-3">End Time</th>
+                    <th class="p-3">Nearest Dist (cm)</th>
+                    <th class="p-3">Action</th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+                </tbody>
+        </table>
+    </div>
+
+    <script>
+        const socket = io();
+        let chartInstance = null;
+
+        // --- 1. Fetch & Render Data ---
+        function loadData() {
+            fetch('/api/records')
+                .then(r => r.json())
+                .then(data => {
+                    renderTable(data);
+                    renderChart(data);
+                });
+        }
+        
+        // Load immediately on open
+        loadData();
+
+        // --- 2. Listen for Updates ---
+        // Refresh table and chart when a new record finishes
+        socket.on('new_historical_record', () => {
+            loadData();
+        });
+
+        // Redirect on LIVE intrusion
+        socket.on('status_update', (data) => {
+            if (data.active) {
+                console.log("Redirecting to dashboard...");
+                window.location.href = "/";
+            }
+        });
+
+        // --- 3. Render Chart ---
+        function renderChart(data) {
+            const ctx = document.getElementById('historyChart').getContext('2d');
+            
+            // Separate data by room
+            const room1Data = data
+                .filter(d => d.room === 'Room1')
+                .map(d => ({ x: d.start_time, y: d.nearest_distance }));
+            
+            const room2Data = data
+                .filter(d => d.room === 'Room2')
+                .map(d => ({ x: d.start_time, y: d.nearest_distance }));
+
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Room 1',
+                            data: room1Data,
+                            backgroundColor: 'rgba(59, 130, 246, 0.6)', // Blue
+                            borderColor: 'rgba(59, 130, 246, 1)',
+                            pointRadius: 6
+                        },
+                        {
+                            label: 'Room 2',
+                            data: room2Data,
+                            backgroundColor: 'rgba(16, 185, 129, 0.6)', // Green
+                            borderColor: 'rgba(16, 185, 129, 1)',
+                            pointRadius: 6
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'category', // Treat timestamps as categories
+                            title: { display: true, text: 'Time of Event' },
+                            ticks: { maxTicksLimit: 10 } // Prevent clutter
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: 'Nearest Distance (cm)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // --- 4. Render Table ---
+        function renderTable(data) {
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+            data.forEach(row => {
+                const tr = `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="p-3 font-bold text-gray-700">${row.room}</td>
+                        <td class="p-3 text-sm text-gray-600">${row.start_time}</td>
+                        <td class="p-3 text-sm text-gray-600">${row.end_time}</td>
+                        <td class="p-3 text-red-600 font-bold">${row.nearest_distance} cm</td>
+                        <td class="p-3">
+                            <button onclick="deleteRecord('${row._id}')" class="text-red-500 hover:text-red-700 font-bold text-sm">Delete</button>
+                        </td>
+                    </tr>
+                `;
+                tbody.insertAdjacentHTML('beforeend', tr);
+            });
+        }
+
+        function deleteRecord(id) {
+            if(!confirm("Delete this record permanently?")) return;
+            fetch(`/api/delete/${id}`, { method: 'DELETE' })
+                .then(() => loadData());
+        }
+    </script>
+</body>
+</html>
